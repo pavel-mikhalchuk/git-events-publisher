@@ -5,12 +5,17 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
+	"sort"
+	"strings"
+	"sync"
 
 	"github.com/gorilla/mux"
+	log "github.com/sirupsen/logrus"
 )
+
+var mutext sync.Mutex
 
 func flushSubscribersToDisk() {
 	f, err := os.Create(subscribersFileName)
@@ -25,9 +30,9 @@ func flushSubscribersToDisk() {
 	for webhook := range subscribers {
 		_, err = w.WriteString(fmt.Sprintf("%s\n", webhook))
 		if err != nil {
-			log.Printf("Failed to flush a subscriber %s", webhook)
+			log.Fatalf("Failed to flush a subscriber %s", webhook)
 		} else {
-			log.Printf("%s is flushed", webhook)
+			log.Infof("%s is flushed", webhook)
 		}
 	}
 	w.Flush()
@@ -39,6 +44,9 @@ type Subscriber struct {
 }
 
 func registerSubscriber(w http.ResponseWriter, req *http.Request) {
+	mutext.Lock()
+	defer mutext.Unlock()
+
 	var subscriber Subscriber
 
 	log.Println("Registering new subscriber")
@@ -46,16 +54,16 @@ func registerSubscriber(w http.ResponseWriter, req *http.Request) {
 	err := json.NewDecoder(req.Body).Decode(&subscriber)
 
 	if err != nil {
-		log.Fatalf("Registration of a new subscriber is failed. Error details: %s", err)
+		log.Warnf("Registration of a new subscriber is failed. Error details: %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("%+v", subscriber)
+	log.Infof("%+v", subscriber)
 
 	subscribers[subscriber.WebhookURL] = true
 
-	log.Println("Flush subscribers to disk")
+	log.Infof("Flush subscribers to disk")
 
 	flushSubscribersToDisk()
 }
@@ -84,27 +92,47 @@ func initSubscribersMap() {
 		log.Fatalf("Initialization of subscribers is failed. Error details: %s", err)
 	}
 
-	log.Println("Initialization of subscribers is finished susscessfully")
+	log.Info("Initialization of subscribers is finished susscessfully")
 }
 
 func handlePush(w http.ResponseWriter, req *http.Request) {
+	mutext.Lock()
+	defer mutext.Unlock()
+
+	processedWhs := []string{}
+
+	whToDelete := []string{}
+
 	for webhook := range subscribers {
 		res, err := http.Post(webhook, "application/json", bytes.NewBufferString(""))
 
 		if err != nil {
-			log.Printf("Failed to notify a subscriber '%s'", webhook)
-		} else if res.Status != "200" {
-			log.Printf("Subscriber '%s' responded with non 200. Response code: %s", webhook, res.Status)
+			log.Warnf("Failed to notify a subscriber '%s'", webhook)
+			whToDelete = append(whToDelete, webhook)
+		} else if res.StatusCode != 200 {
+			log.Warnf("Subscriber '%s' responded with non 200. Response code: %s", webhook, res.StatusCode)
+			whToDelete = append(whToDelete, webhook)
 		} else {
-			log.Printf("Subscriber '%s' notified successfully.", webhook)
+			log.Infof("Subscriber '%s' notified successfully.", webhook)
 		}
+
+		processedWhs = append(processedWhs, webhook)
 	}
+
+	for _, webhook := range whToDelete {
+		delete(subscribers, webhook)
+	}
+
+	sort.Strings(processedWhs)
+
+	w.Write([]byte(strings.Join(processedWhs, "\n")))
 }
 
 func main() {
 	initSubscribersMap()
 
 	r := mux.NewRouter()
+	r.HandleFunc("/health", func(w http.ResponseWriter, req *http.Request) {}).Methods("GET")
 	r.HandleFunc("/subscribers", registerSubscriber).Methods("POST")
 	r.HandleFunc("/push", handlePush).Methods("POST")
 	http.Handle("/", r)
