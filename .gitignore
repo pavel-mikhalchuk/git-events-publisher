@@ -4,6 +4,7 @@
 *.dll
 *.so
 *.dylib
+git-events-publisher
 
 # Test binary, built with `go test -c`
 *.test
