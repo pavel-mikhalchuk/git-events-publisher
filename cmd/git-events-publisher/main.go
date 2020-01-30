@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -104,6 +105,8 @@ func handlePush(w http.ResponseWriter, req *http.Request) {
 	whToDelete := []string{}
 
 	for webhook := range subscribers {
+		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+
 		res, err := http.Post(webhook, "application/json", bytes.NewBufferString(""))
 
 		if err != nil {
