@@ -110,7 +110,7 @@ func handlePush(w http.ResponseWriter, req *http.Request) {
 		res, err := http.Post(webhook, "application/json", bytes.NewBufferString(""))
 
 		if err != nil {
-			log.Warnf("Failed to notify a subscriber '%s'", webhook)
+			log.Warnf("Failed to notify a subscriber '%s'. Error details: ", webhook, err)
 			whToDelete = append(whToDelete, webhook)
 		} else if res.StatusCode != 200 {
 			log.Warnf("Subscriber '%s' responded with non 200. Response code: %s", webhook, res.StatusCode)
