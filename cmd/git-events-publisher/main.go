@@ -112,14 +112,15 @@ func handlePush(w http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			log.Warnf("Failed to notify a subscriber '%s'. Error details: ", webhook, err)
 			whToDelete = append(whToDelete, webhook)
+			processedWhs = append(processedWhs, fmt.Sprintf("%s - '%s'", webhook, err.Error()))
 		} else if res.StatusCode != 200 {
 			log.Warnf("Subscriber '%s' responded with non 200. Response code: %s", webhook, res.StatusCode)
 			whToDelete = append(whToDelete, webhook)
+			processedWhs = append(processedWhs, fmt.Sprintf("%s - '%s'", webhook, res.Status))
 		} else {
 			log.Infof("Subscriber '%s' notified successfully.", webhook)
+			processedWhs = append(processedWhs, fmt.Sprintf("%s - '%s'", webhook, res.Status))
 		}
-
-		processedWhs = append(processedWhs, webhook)
 	}
 
 	for _, webhook := range whToDelete {
